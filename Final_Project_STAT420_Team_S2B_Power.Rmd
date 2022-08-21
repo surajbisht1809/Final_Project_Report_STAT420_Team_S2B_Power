@@ -1,0 +1,967 @@
+---
+title: 'Final Project Report'
+author: "STAT 420, Summer 2022, Team: S2B Power"
+date: ''
+output:
+   
+  bookdown::html_document2: 
+    toc: true
+    number_sections: yes
+    fig_caption: yes
+    urlcolor: cyan
+    toc_depth: 4
+---
+
+
+```{r setup, echo = FALSE, message = FALSE, warning = FALSE}
+options(scipen = 1, digits = 6, width = 80, fig.alin = "center")
+knitr::opts_chunk$set(echo = TRUE)
+options(tinytex.verbose = TRUE)
+```
+
+
+```{r echo = FALSE, warning = FALSE, message=FALSE, include=FALSE}
+
+library("tibble")
+library("readr")
+library("MASS")
+library("faraway")
+library("lmtest")
+library("corrplot")
+library("leaps")
+library("knitr")
+```
+
+# Introduction
+
+## Title of Project
+
+**Life Expectancy Factors and Prediction**
+
+## Source of dataset
+
+Our study will focus on various factors affecting life expectancy considering demographic variables, income composition and mortality rates. Life expectancy dataset  made available to public for the purpose of health data analysis. This dataset is related to life expectancy, health factors from year 2000-2015 for 193 countries has been collected from comes Global Health Observatory (GHO) data repository under World Health Organization. The dataset contains 2938 records and 22 columns. For our project dataset is sourced from Kaggle: [Kaggle Dataset Source Link](https://www.kaggle.com/datasets/kumarajarshi/life-expectancy-who)
+
+## Statement of personal interest
+
+- **Research:** Our team like to apply the knowledge gained in STAT420 course to understand how data analysis techniques and linear regression model can guide us to build best possible model and predict within a reasonable amount of confidence the life expectancy of different countries around the world. This will eventually help government officials adopt the necessary steps to help increase the life expectancy.
+
+- **Inspiration and Personal interest:** We would like to explore how statistics combined with technology can make difference in real-world use cases impacting every individual, provides guidelines to government policies and encourage them take informed decisions in time. We are planning to use different predictors like BMI, alcohol intake, HIV/aids and many more. Our aim is through statistics to help determining the predicting factors that are contributing to lower value of life expectancy. Explainable model clearly identify predictors contributing to life expectancy and by improving certain predictors (for example improving the polio vaccine intake  or reducing alcohol) life expectancy can be improved.
+
+## Description of the dataset
+
+In the following dataset, `Life expectancy` is the response continuous variable, `Country` and `Status`  are the categorical explanatory variables and rest are either continuous numeric or numeric explanatory variables.
+
+```{r, echo=FALSE}
+variables = c(
+  "Country",
+  "Year",
+  "Status",
+  "Life expectancy",
+  "Adult Mortality",
+  "Infant deaths",
+  "Alcohol",
+  "Percentage expenditure",
+  "Hepatitis B",
+  "Measles",
+  "BMI",
+  "Under-five deaths",
+  "Polio",
+  "Total expenditure",
+  "Diphtheria",
+  "HIV/AIDS",
+  "GDP",
+  "Population",
+  "Thinness  1-19 yrs",
+  "Thinness 5-9 yrs",
+  "Income comp. of resources",
+  "Schooling")
+types = rep("numerical", length(variables))
+types[1] = "character"
+types[3] = "character"
+description = c('Country', 'Year', 'Developed or Developing status', 'Life Expectancy in age', 'Adult Mortality Rates of both sexes (probability of dying between 15 and 60 years per 1000 population)', 'Number of Infant Deaths per 1000 population', 'Alcohol, recorded per capita (15+) consumption (in litres of pure alcohol)', 'Expenditure on health as a percentage of Gross Domestic Product per capita(%)', 'Hepatitis B (HepB) immunization coverage among 1-year-olds (%)', 'Measles - number of reported cases per 1000 population', 'Average Body Mass Index of entire population', 'Number of under-five deaths per 1000 population', 'Polio (Pol3) immunization coverage among 1-year-olds (%)', 'General government expenditure on health as a percentage of total government expenditure (%)', 'Diphtheria tetanus toxoid and pertussis (DTP3) immunization coverage among 1-year-olds (%)', 'Deaths per 1 000 live births HIV/AIDS (0-4 years)', 'Gross Domestic Product per capita (in USD)', 'Population of the country', 'Prevalence of thinness among children and adolescents for Age 10 to 19 (% )', 'Prevalence of thinness among children for Age 5 to 9(%)', 'Human Development Index in terms of income composition of resources (index ranging from 0 to 1)','Number of years of Schooling(years)'
+)
+knitr::kable(data.frame(Variables=variables, Type=types, Description=description), align = "lcl",
+       caption = "Data Description", booktabs = TRUE)
+#kable(data.frame(Variables=variables, Type=types, Description=description), align = "lcl",
+#       caption = "Data Description", format = "latex", booktabs = TRUE)
+```
+
+
+## Goal of this model
+
+The goal of the model is to identify what are the key contributing factors towards life expectancy and to accurately predict the life expectancy.
+
+
+# Method
+
+## Data Cleaning
+
+
+### Investigations - Visually looking at data statistics
+
+
+Now we investigate the dataset to see what actions we need to take with the dataset before creating a model
+
+The data source format is csv and can be read into R, below are the sample records and variable data types. Since the output is very long, we use echo=FALSE, but as a sample, we show the output below for the first few rows
+
+```{r, echo = FALSE}
+life_data = read.csv("LifeExpectancyData.csv")
+knitr::kable(head(life_data)[,1:22], caption = "Data Structure")
+```
+
+
+### Data Cleanup based on data inspection
+
+**Rename these columns**
+
+Most of the columns are not one word so we will rename them to one word for ease of programming
+
+```{r}
+names(life_data)[c(4,5,6,8,9,12,14,16,19,20,21)] =  c("Life_expectancy","Adult_Mortality","Infant_deaths",
+                           "Percentage_expenditure","Hepatitis_B","Under_5_deaths",
+                           "Total_expenditure","HIV_AIDS","Thinness_1_to_19_yrs","Thinness_5_to_9_yrs",
+                           "Income_composition_of_resources")
+```
+
+
+**Remove these columns**
+
+* Remove Country column since it is not a predictor and is simply a country name
+
+```{r}
+life_data = subset(life_data, select = -c(`Country`))
+```
+
+
+**Other Observations**
+
+Status column is a factor variable with two levels - Developed and Developing
+
+```{r}
+is.factor(life_data$Status)
+life_data$Status = as.factor(life_data$Status)
+levels(life_data$Status)
+```
+
+```{r}
+# Box plot
+boxplot(Life_expectancy ~ Status, data = life_data, 
+     xlab = "Status",
+     ylab = "Life expectancy",
+     main = "Life expectancy vs Status",
+     pch = 20,
+     cex = 2,
+     col = "darkorange",
+     border = "dodgerblue"
+     )
+```
+We can observe the following two points from the box plot 
+* Mean of Life Expectancy of a developed nation is higher than the mean of a developing nation
+* Variance in Life Expectancy of a developing nation is higher than that of a developed nation
+
+There is some missing data. We will do a quick summary on how many values is each variable missing
+
+```{r}
+v = sort(colSums(is.na(life_data)),decreasing = TRUE)
+knitr::kable(v, col.names = c("NA Count"),align = "ll", caption = "Variables with missing value count")
+```
+
+* Population - 652 records have missing values. 
+* Hepatitis.B - 553 records have missing values. 
+* GDP - 448 records have missing values. 
+* Total Expenditure - 226 records have missing values.
+* Alcohol - 194 records have missing values. 
+* Income composition of resources - 167 records have missing values. 
+* Schooling - 163 records have missing values. 
+* BMI - 34 records have missing values. 
+* Thinness 1.19 years - 34 records have missing values.
+* Thinness 5.9 years - 34 records have missing values.
+* Polio - 19 records have missing values. 
+* Diphtheria - 19 records have missing values. 
+* Adult Mortality - 10 records have missing values. 
+* Life expectancy - 10 records have missing values.
+
+```{r}
+#remove missing observations
+life_data = na.omit(life_data)
+```
+
+
+### Investigation - Correlation
+
+Now, to identify columns that have high correlations. First we plot the correlation matrix
+
+```{r fig.height=9, fig.width=9}
+corrplot(cor(life_data[,3:21]))
+```
+
+We define high correlation as great than 70% correlation.
+
+In order to identify correlation we first create a dataframe that has only numeric predictors
+
+```{r}
+life_data_with_char_cols_removed = subset(life_data, select = -c(`Status`))
+```
+
+
+Now we identify the correlation in numeric predictors. We mark all correlations less than .70 as NA, so that we can easily identify highly correlated features
+
+For brevity of the report, we only show the head of the correlation matrix, while we had looked at the entire matrix to come to our conclusions below
+
+```{r}
+cor_relation = cor(life_data_with_char_cols_removed, use = "complete.obs")
+
+cor_relation[abs(cor_relation) < 0.80] <- NA
+head(cor_relation,20)
+```
+
+
+### Data Cleanup based on correlation
+
+Based on the above correlation matrix and corroborated by the correlation plot , we make the below observations
+
+
+**Remove the following predictors**
+
+* Infant_deaths & Under_5_deaths are highly correlated . We remove infant_deaths
+* Percentage_expenditure & GDP are highly correlated. Give GDP also had a lot of missing values we remove Hence we remove GDP
+* Thinness_1_to_19_yrs & Thinness_5_to_9_yrs are highly correlated. Hence we remove Thinness_5_to_9_yrs
+
+
+```{r}
+life_data_clean = subset(life_data, select = -c(`Infant_deaths`, `GDP`, `Thinness_5_to_9_yrs`))
+
+dim(life_data_clean)
+```
+
+
+
+### Data Cleanup to handle missing values
+
+We know that step wont work with missing values. Hence we will need to remove those. 
+
+We started with `r nrow(life_data)` observations and `r ncol(life_data)` columns and after our initial cleanup we end up with `r nrow(life_data_clean)` observations and `r ncol(life_data_clean)` columns
+
+
+
+## Transformation identification
+
+
+
+### Pairs plot
+
+Now, before we begin modeling, we look at the pairs plots to see if any of the parameters are an obvious choice for transformations
+
+```{r fig.height=14, fig.width=14}
+life_data_with_char_cols_removed = subset(life_data_clean, select = -c(`Status`))
+pairs(life_data_with_char_cols_removed , col = "dodgerblue")
+```
+
+We make the following observations from the plot
+
+- Life Expectancy have strong negative correlation with ` Adult Mortality ` and `HIV AIDS`.
+- Life Expextancy has positive correlation with `Income comp. of resources` and Schooling.
+- Slightly positive correlation between Life Expectancy and BMI.
+- Slightly positive correlation between `Polio` and `Diphtheria`.
+
+**Potential for transformations**
+
+From pair plot we definitely see need for some transformation specially with `Adult Mortality` and `Income comp. of resources`. We will get exact tranformation format with boxcox procedure.
+
+**Diagnostics Function**
+Diagnostics function for `Fitted versus Residuals` & `Normal Q-Q` plots and testing model against Shapiro-Wilk & Breusch-Pagan test
+
+```{r}
+diagnostics = function(model, pcol = "grey", lcol = "dodgerblue", alpha = 0.01,
+                        plotit = TRUE, testit = TRUE) {
+  if(plotit == TRUE) {
+    par(mfrow=c(1,2)) 
+    plot(fitted(model), resid(model), col = pcol, pch = 20,
+     xlab = "Fitted", ylab = "Residuals.",
+     main = "Fitted versus Residuals")
+    abline(h = 0, col = lcol, lwd = 2)
+    
+    qqnorm(resid(model), main = "Normal Q-Q Plot", col = pcol)
+    qqline(resid(model), col = lcol, lwd = 2)
+  }
+  if (testit == TRUE) {
+    normality_p_val = shapiro.test(resid(model))$p.value
+    normality_decision = ifelse(normality_p_val < alpha, "Reject", "Fail to Reject.")
+    (bptest_pvalue =  bptest(model)$"p.value"[[1]])
+    const_variance_decision = ifelse(bptest_pvalue < alpha, "Reject", "Fail to Reject.")
+    rmse = round(sqrt(mean(resid(model) ^ 2)), 4)
+    aic = round(extractAIC(model)[2], 2)
+    num_predictors = length(coef(model)) - 1
+
+    res = list(num_predictors = num_predictors, sw_pvalue = normality_p_val, sw_decision = normality_decision,
+               bp_pvalue = bptest_pvalue, bp_decision = const_variance_decision, RMSE = rmse,
+               AdjustedR2 = round(summary(model)$"adj.r.squared", 5), AIC=aic)
+  
+  return(res)
+  }
+  
+  
+}
+
+```
+
+In order to validate that transformations are necessary we will start with a simple additive model and look at its diagnostics plots
+
+```{r fig.height=7, fig.width=14}
+model_1 = lm( Life_expectancy  ~ . , data=life_data_clean)
+knitr::kable(data.frame(diagnostics(model_1)))
+```
+
+Based on the diagnostics and the plots we see that some kind of transformation for the response is necessary.
+
+
+
+### Boxcox lambda identifications for response and predictors
+
+
+
+#### Response transformation identification
+
+In order to figure out the transformation for the response, we find the lambda for it
+
+```{r}
+bc = boxcox(model_1)
+```
+
+We know that the most common Box-Cox Transformations are
+
+|$\lambda$|Transformed Data|
+|---------|-----------------|
+|-2|$y^{-2}$|
+|-1|$y^{-1}$|
+|-.5|$1 \over \sqrt y$|
+|0|ln(y)|
+|.5|$\sqrt y$|
+|1|y|
+|2|$y^2$|
+
+since our $\lambda$ is close to 2 we will do $y^2$ transformations
+
+We redo the model and look at the diagnostics plots again
+
+
+Apply transformation and test model
+```{r fig.height=7, fig.width=14}
+#fit new linear regression model using the Box-Cox transformation
+new_model = lm(Life_expectancy ^ 2 ~ ., data=life_data_clean)
+knitr::kable(data.frame(diagnostics(new_model)))
+```
+
+
+
+We see that the plots and the diagnostics are a lot better, but there seems to be some scope for improvement. 
+
+
+
+#### Predictors transformation identification
+
+Let us now identify the lambda transformations for the other columns we identified and using those variables as response, fit the model, but keep Life_expectancy ^ 2 in the predictor with others
+
+
+```{r}
+m3 = lm(Adult_Mortality ~ . - Life_expectancy +  Life_expectancy ^ 2, data = life_data_clean)
+boxcox(m3,xlab = "lambda for Adult_Mortality")
+```
+
+We should apply $\sqrt y$ transformation to Adult_Mortality since $\lambda$ is close to 0.5
+
+```{r}
+m3 = lm(Alcohol ~ . - Life_expectancy +  Life_expectancy ^ 2 , data = life_data_clean)
+boxcox(m3,xlab = "lambda for Alcohol")
+```
+
+We should apply $\sqrt y$ transformation to Alcohol since $\lambda$ is close to 0.5
+
+```{r}
+m3 = lm(Hepatitis_B ~ . - Life_expectancy +  Life_expectancy ^ 2 , data = life_data_clean)
+boxcox(m3,xlab = "lambda for Hepatitis_B")
+```
+
+We should apply $y^2$ transformation to Hepatitis_B since $\lambda$ is close to 2
+
+```{r}
+m3 = lm(HIV_AIDS ~ . - Life_expectancy +  Life_expectancy ^ 2 , data = life_data_clean)
+boxcox(m3,xlab = "lambda for HIV_AIDS")
+```
+
+We should apply 1/$\sqrt HIV AIDS$ transformation to HIV_AIDS since $\lambda$ is close to -0.5
+
+```{r}
+m3 = lm(Diphtheria ~ . - Life_expectancy +  Life_expectancy ^ 2  , data = life_data_clean)
+boxcox(m3,xlab = "lambda for Diphtheria")
+```
+
+We should apply $y^2$ transformation to Diphtheria since $\lambda$ is close to 2
+
+
+```{r}
+m3 = lm(Total_expenditure ~ . - Life_expectancy +  Life_expectancy ^ 2  , data = life_data_clean)
+boxcox(m3,xlab = "lambda for Total_expenditure")
+```
+
+We should apply no transformation to Total_expenditure since $\lambda$ is close to 1.0
+
+
+```{r}
+m3 = lm(Population ~ . - Life_expectancy +  Life_expectancy ^ 2  , data = life_data_clean)
+boxcox(m3,xlab = "lambda for Population")
+```
+
+We should apply log transformation to Population since $\lambda$ is close to 0
+
+
+```{r}
+m3 = lm(Polio ~ . - Life_expectancy +  Life_expectancy ^ 2  , data = life_data_clean)
+boxcox(m3,xlab = "lambda for Polio")
+```
+
+We should apply $y^2$ transformation to Polio since $\lambda$ is close to 2
+
+```{r}
+m3 = lm(Thinness_1_to_19_yrs ~ . - Life_expectancy +  Life_expectancy ^ 2  , data = life_data_clean)
+boxcox(m3,xlab = "lambda Thinness_1_to_19_yrs ")
+```
+
+We should apply log transformation to Thinness_1_to_19_yrs since $\lambda$ is close to 0
+
+
+```{r}
+m3 = lm(BMI ~ . - Life_expectancy +  Life_expectancy ^ 2 , data = life_data_clean)
+boxcox(m3,xlab = "lambda for BMI")
+```
+
+No transformation needed for BMI since $\lambda$ is close to 1
+
+## Model Identification
+
+### Models - Simple Additive, steps with AIC & BIC and transformation
+
+Based on the above analysis we create the below models to start with
+
+1) A simple additive model
+2) An exhaustive search with backward and forward AIC & BIC
+3) A model with the above transformations
+
+
+#### Additive
+```{r}
+model_additive = lm (Life_expectancy  ~ ., data = life_data_clean)
+```
+
+#### Exhasutive Search
+
+```{r}
+model_all = lm(Life_expectancy ~ ., data = life_data_clean)
+all_models = summary(regsubsets(Life_expectancy ~ ., data = life_data_clean))
+```
+
+
+```{r}
+#all_models$which
+```
+
+```{r}
+all_models$adjr2
+```
+
+The above show the adjusted R2 of all the models selected by the exhaustive search
+
+```{r}
+(best_r2_ind = which.max(all_models$adjr2))
+```
+
+Selected the best model
+
+
+```{r}
+all_models$which[best_r2_ind,]
+```
+
+```{r}
+#p = length(coef(model_all))
+p = 9
+n = length(resid(model_all))
+```
+
+
+#### AIC
+```{r}
+le_model_aic = n * log(all_models$rss/n) + 2 * (2:p)
+(best_aic_ind = which.min(le_model_aic))
+all_models$which[best_aic_ind,]
+
+```
+
+```{r}
+#store to use for later
+le_model_best_aic = lm (Life_expectancy ~ Year +
+                        + Adult_Mortality + Percentage_expenditure + BMI + Diphtheria + HIV_AIDS+ 
+                        + Schooling + Income_composition_of_resources, data = life_data_clean)
+```
+
+```{r fig.height=5, fig.width=10}
+# model complexity
+plot( le_model_aic ~ I(2:p), 
+     xlab = "p = Number of parameters",
+     ylab = "AIC",
+     main = "AIC vs Model complexity",
+     pch = 20,
+     cex = 2,
+     col = "darkorange",
+     type = "b"
+     )
+```
+
+##### Backward AIC
+```{r}
+#backward aic
+le_model_back_aic = step(model_additive, trace = 0)
+coef(le_model_back_aic)
+```
+
+##### Forward AIC
+```{r}
+#forward aic
+
+le_model_fwd_aic_start = lm (Life_expectancy ~ 1, data = life_data_clean)
+le_model_fwd_aic = step(le_model_fwd_aic_start,
+                        scope =Life_expectancy ~ 
+                        Year
+                        + Status
+                        + Income_composition_of_resources
+                        + Adult_Mortality
+                        + Total_expenditure
+                        + Alcohol
+                        + Percentage_expenditure
+                        + Hepatitis_B
+                        + Measles
+                        + BMI
+                        + Under_5_deaths 
+                        + Polio
+                        + HIV_AIDS
+                        + Diphtheria
+                        + Thinness_1_to_19_yrs
+                        + Schooling
+                        ,
+                        direction = "forward", trace = 0)
+```
+
+#### BIC
+
+```{r}
+le_model_bic = n * log(all_models$rss/n) + log(n) * (2:p)
+(best_bic_ind = which.min(le_model_bic))
+all_models$which[best_bic_ind,]
+
+
+#store to use for later
+
+le_model_best_bic = lm (Life_expectancy ~ Year +
+                        + Adult_Mortality + Percentage_expenditure + Schooling + BMI + HIV_AIDS+ 
+                        + Diphtheria + Income_composition_of_resources, data = life_data_clean)
+
+
+```
+
+##### Backward BIC
+```{r}
+#backward bic
+
+le_model_back_bic = step(model_additive, trace = 0, k = log(n))
+coef(le_model_back_bic)
+```
+
+
+##### Forward BIC
+```{r}
+#forward bic
+
+le_model_fwd_bic_start = lm (Life_expectancy ~ 1, data = life_data_clean)
+le_model_fwd_bic = step(le_model_fwd_bic_start,
+                        scope =Life_expectancy ~ 
+                        Year
+                       + Status
+                        + Income_composition_of_resources
+                        + Adult_Mortality
+                        + Total_expenditure
+                        + Alcohol
+                        + Percentage_expenditure
+                        + Hepatitis_B
+                        + Measles
+                        + BMI
+                        + Under_5_deaths 
+                        + Polio
+                        + HIV_AIDS
+                        + Diphtheria
+                        + Thinness_1_to_19_yrs
+                        ,
+                        direction = "forward", k = log(n), trace = 0)
+```
+
+##### Transformation
+```{r}
+
+#model_additive_backward_aic = step (model_additive, trace = 0)
+model_transform =  lm (Life_expectancy ^ 2  ~ Status + sqrt(Alcohol)
+                        + sqrt(Adult_Mortality) + Income_composition_of_resources ^ 2 + 1/sqrt(Total_expenditure) + log(Population)
+                        + BMI + 1/sqrt(HIV_AIDS) + Diphtheria ^ 2 + Hepatitis_B ^ 2 + Measles + Percentage_expenditure
+                        + Polio ^2 + log(Thinness_1_to_19_yrs),
+                 data = life_data_clean)
+
+model_transform_backward_aic =  step (model_transform, trace = 0)
+
+```
+
+##### Polynomial
+Based on playing around with the data and trying various different interaction between variables we came up with following interactive polynomial transformation model.
+
+```{r}
+
+model_poly = lm(Life_expectancy~sqrt(Adult_Mortality)*(Income_composition_of_resources^2)*Percentage_expenditure*Schooling*BMI+HIV_AIDS+Diphtheria+Polio+Year*Status,data=life_data_clean)
+```
+
+To get the rmse of the transformed model we need to get the fitted values back to the original scale
+
+```{r}
+rmse_transformed = sqrt(mean((life_data_clean$Life_expectancy - sqrt(fitted(model_transform)))^2))
+rmse_transform_backward_aic = sqrt(mean((life_data_clean$Life_expectancy - sqrt(fitted(model_transform_backward_aic)))^2))
+```
+
+```{r fig.width=20}
+
+df_result = rbind(m_additive = diagnostics(model_additive,plotit = FALSE), 
+                   #m_additive_step = diagnostics(model_additive_backward_aic,plotit = FALSE), 
+                   m_transform_1 = diagnostics(model_transform,plotit = FALSE), 
+                   m_transform_1_step = diagnostics(model_transform,plotit = FALSE),
+                   model_min_aic = diagnostics(le_model_best_aic,plotit = FALSE),
+                   model_min_bic = diagnostics(le_model_best_bic,plotit = FALSE),
+                   model_back_aic = diagnostics(le_model_back_aic,plotit = FALSE),
+                   model_back_bic = diagnostics(le_model_back_bic,plotit = FALSE),
+                   model_fwd_aic = diagnostics(le_model_fwd_aic,plotit = FALSE),
+                   model_fwd_bic = diagnostics(le_model_fwd_bic,plotit = FALSE),
+                   model_poly = diagnostics(model_poly,plotit = FALSE)
+                    
+                  )
+
+#update the rmse of the transformed models
+
+df_result['m_transform_1',]$RMSE = round(rmse_transformed,4)
+df_result['m_transform_1_step',]$RMSE = round(rmse_transform_backward_aic,4)
+
+knitr::kable(df_result, align = "cccccccc", caption = "Model Comparison Summary")
+
+```
+
+Looking at the above table, we can clearly see that the polynomial  model is yielding a good model. The RMSE is the lowest but it has does not have the lowest predictors. Also its adj R2 is the highest
+
+
+## Model selection
+
+### Anova tests
+
+We now perform Anova tests 
+
+First test between `le_model_back_aic` and `model_poly`
+```{r}
+anova(le_model_back_aic, model_poly)
+```
+
+Second between two best models `model_additive` and `model_poly`
+```{r}
+anova(model_additive, model_poly)
+```
+
+From both the anova tests its apparent that larger model `model_poly' is statistically preferred.
+
+### Model Evaluation
+
+In this section we'll evaluate prediction abilities of the models. 
+First let's split the data set to training and "test". 75% for training and 25% for test datasets
+
+```{r}
+trn_idx = sample(nrow(life_data_clean), round(nrow(life_data_clean) * 0.75))
+life_data_clean_trn = life_data_clean[trn_idx, ]
+life_data_clean_tst = life_data_clean[-trn_idx, ]
+```
+
+Train several found models:
+
+```{r}
+model_additive_pred = lm (Life_expectancy  ~ ., data = life_data_clean_trn)
+model_transform_pred =  lm (Life_expectancy ^ 2  ~ Status + sqrt(Alcohol)
+                        + sqrt(Adult_Mortality) + Income_composition_of_resources ^ 2 + 1/sqrt(Total_expenditure) + log(Population)
+                        + BMI + 1/sqrt(HIV_AIDS) + Diphtheria ^ 2 + Hepatitis_B ^ 2 + Measles + Percentage_expenditure
+                        + Polio ^2 + log(Thinness_1_to_19_yrs),
+                 data = life_data_clean_trn)
+model_best_aic_pred = lm (Life_expectancy ~ Year +
+                        + Adult_Mortality + Percentage_expenditure + BMI + Diphtheria + HIV_AIDS+ 
+                        + Schooling + Income_composition_of_resources, data = life_data_clean_trn)
+model_best_bic_pred = lm (Life_expectancy ~ Year +
+                        + Adult_Mortality + Percentage_expenditure + Schooling + BMI + HIV_AIDS+ 
+                        + Diphtheria + Income_composition_of_resources, data = life_data_clean_trn)
+
+model_back_aic_pred = step(model_additive_pred, trace = 0)
+model_back_bic_pred = step(model_additive_pred, trace = 0, k = log(nrow(life_data_clean_trn)))
+
+model_fwd_aic_pred = step(lm (Life_expectancy ~ 1, data = life_data_clean_trn),
+                        scope =Life_expectancy ~ 
+                        Year
+                        + Status
+                        + Income_composition_of_resources
+                        + Adult_Mortality
+                        + Total_expenditure
+                        + Alcohol
+                        + Percentage_expenditure
+                        + Hepatitis_B
+                        + Measles
+                        + BMI
+                        + Under_5_deaths 
+                        + Polio
+                        + HIV_AIDS
+                        + Diphtheria
+                        + Thinness_1_to_19_yrs
+                        + Schooling
+                        ,
+                        direction = "forward", trace = 0)
+
+model_fwd_bic_pred = step(lm (Life_expectancy ~ 1, data = life_data_clean_trn),
+                        scope =Life_expectancy ~ 
+                        Year
+                       + Status
+                        + Income_composition_of_resources
+                        + Adult_Mortality
+                        + Total_expenditure
+                        + Alcohol
+                        + Percentage_expenditure
+                        + Hepatitis_B
+                        + Measles
+                        + BMI
+                        + Under_5_deaths 
+                        + Polio
+                        + HIV_AIDS
+                        + Diphtheria
+                        + Thinness_1_to_19_yrs
+                        ,
+                        direction = "forward", k = log(nrow(life_data_clean_trn)), trace = 0)
+model_poly_pred = lm(Life_expectancy~sqrt(Adult_Mortality)*(Income_composition_of_resources^2)*Percentage_expenditure*Schooling*BMI+HIV_AIDS+Diphtheria+Polio+Year*Status,data=life_data_clean_trn)
+```
+
+
+```{r}
+model_prediction_data = function(model) {
+  res = list(
+    rmse_test = round(sqrt(mean((life_data_clean_tst$Life_expectancy - predict(model, life_data_clean_tst)) ^ 2)), 4),
+    rsme_train = round(sqrt(mean((life_data_clean_trn$Life_expectancy - predict(model, life_data_clean_trn)) ^ 2)), 4)  
+  )
+}
+
+df_result = rbind( additive = model_prediction_data(model_additive_pred),
+                   #transform = model_prediction_data(model_transform_pred),
+                   best_aic = model_prediction_data(model_best_aic_pred),
+                   best_bic = model_prediction_data(model_best_bic_pred),
+                   back_aic = model_prediction_data(model_back_aic_pred),
+                   back_bic = model_prediction_data(model_back_bic_pred),
+                   fwd_aic = model_prediction_data(model_fwd_aic_pred),
+                   fwd_bic = model_prediction_data(model_fwd_bic_pred),
+                   poly = model_prediction_data(model_poly_pred)
+            )
+                     
+
+
+knitr::kable(df_result)
+
+```
+
+The best RMSE for both train and test data sets shows polynomial model 
+
+### Model Prediction
+
+```{r}
+testing = predict(model_poly_pred,life_data_clean_tst)
+
+#compare actual and predicted values of Life_expectancy
+df_pred = head(cbind(actual = life_data_clean_tst$Life_expectancy,predicted = testing))
+
+knitr::kable(df_pred,row.names = FALSE,caption = "Actual Vs Predicted")
+
+```
+
+As we concluded above, we will use polynomial model going forward. Below is the formula of the model selected.
+
+```{r}
+summary(model_poly)
+```
+
+
+### Individual parameter significance test for selected model
+
+Looking at the diagnostics, we will check can our model still do better. We will now look at the individual significant of the parameters of this model to see if we can eliminate any predictors
+
+```{r}
+names(coef(model_poly))
+
+```
+
+
+The above are all the coefficients of the model. We will use them to compare to the below filtered list of p-values > .1
+
+```{r}
+a <- coef(summary(model_poly))[,"Pr(>|t|)"] 
+names(a[a>.01])
+```
+
+All parameters are significant
+
+
+### Variance Inflation factor identification
+
+We look at variance inflation factors, and filter by only vifs that are >5
+
+```{r, message = FALSE, warning = FALSE}
+car::vif(model_poly)
+```
+
+We notice that there are no high vif values so we make no changes
+
+### Influential points identification and handling
+
+We will now look at high influence points and investigate them
+
+As an experiment we try and remove the influentials and see what impact this has on the diagnostics
+
+```{r}
+sum(cooks.distance(model_poly) > 4 / length(cooks.distance(model_poly)))
+```
+
+```{r}
+inf_points_removed = subset(life_data_clean, cooks.distance(model_poly) <= 4 / length(cooks.distance(model_poly)))
+
+
+model_poly_inf_removed = lm(Life_expectancy~sqrt(Adult_Mortality)*(Income_composition_of_resources^2)*Percentage_expenditure*Schooling*BMI+HIV_AIDS+Diphtheria+Polio+Year*Status,data=inf_points_removed)
+```
+
+
+#### Diagnostics Comparison
+
+Now we compare the diagnostics data
+
+```{r fig.height=7, fig.width=14}
+
+model_with_influential = diagnostics(model_poly)
+model_without_influential = diagnostics(model_poly_inf_removed)
+
+df_result = rbind(model_with_influential=model_with_influential, model_without_influential=model_without_influential)
+
+knitr::kable(df_result, align = "cccccccc", caption = "Model Comparison with and without Influential datapoints")
+```
+
+We see that our diagnostics have improved significantly, including BP test and saphiro test p-values, lower RMSE and higher adj R2.
+
+We will have to sacrifice about 9% of the observations but the improvements in RMSE and Adjusted Rsquare are significant. 
+
+So now we know that it is the influential points that are causing our model to have less than ideal diagnostics and hence we will discard the influential points and select the new model as our better model
+
+
+## Selected model
+
+Hence now our good model is model_without_influential and the dataset is inf_points_removed
+
+
+# Results
+
+
+## Comparison of all models
+
+We have already seen this in various places but we will now compare the diagnostics of all the models that we have seen to see how we have progressed
+
+```{r, echo = FALSE}
+df_result = rbind(m_additive = diagnostics(model_additive,plotit = FALSE, alpha = 0.01), 
+                   #m_additive_step = diagnostics(model_additive_backward_aic,plotit = FALSE), 
+                   m_transform_1 = diagnostics(model_transform,plotit = FALSE, alpha = 0.01), 
+                   m_transform_1_step = diagnostics(model_transform,plotit = FALSE, alpha = 0.01),
+                   model_min_aic = diagnostics(le_model_best_aic,plotit = FALSE, alpha = 0.01),
+                   model_min_bic = diagnostics(le_model_best_bic,plotit = FALSE, alpha = 0.01),
+                   model_back_aic = diagnostics(le_model_back_aic,plotit = FALSE, alpha = 0.01),
+                   model_back_bic = diagnostics(le_model_back_bic,plotit = FALSE, alpha = 0.01),
+                   model_fwd_aic = diagnostics(le_model_fwd_aic,plotit = FALSE, alpha = 0.01),
+                   model_fwd_bic = diagnostics(le_model_fwd_bic,plotit = FALSE, alpha = 0.01),
+                   model_poly = diagnostics(model_poly,plotit = FALSE, alpha = 0.01),
+                   model_without_influential = diagnostics(model_poly_inf_removed,plotit = FALSE, alpha = 0.01)
+                    
+                  )
+
+df_result['m_transform_1',]$RMSE = round(rmse_transformed,4)
+df_result['m_transform_1_step',]$RMSE = round(rmse_transform_backward_aic,4)
+
+knitr::kable(df_result, align = "cccccccc", caption = "Model Comparison Summary")
+```
+
+
+
+## Diagnostic plots of Selected Model
+
+We also look at the diagnostics plot of our selected model
+
+```{r, echo = FALSE, fig.height=7, fig.width=14, message=FALSE, warning=FALSE}
+diagnostics(model_poly_inf_removed, testit = FALSE)
+```
+
+Our diagnostics plots look fairly good. Using an $\alpha = .01$, even BP test validate the equal variance assumptions. Hence we will select `model_ploy` as our final model.
+
+# Discussion
+
+We spent significant time inspecting, cleaning the data and identifying the best possible model. Majorly time was spent in trying various predictors, their combinations and possible transformations. We looked at variance inflation factors and removed variables with high vifs. Visual pair plots, collinearity and partial correlation coefficient mechanism was applied repetitively to identify collinearity in regression models. 
+
+We also used boxcox to identify possible response and predictor transformations needed.
+
+Multiple model selection methodology is applied including but not limited to simple additive, step-wise forward and backward using AIC & BIC, interactive, polynomial and their combination.
+
+We spent a significant time looking at the individual significance test and experimenting with the variables there. This analysis had a limited benefit, and resulted in only making our diagnostic parameters worse. We still picked the large interactive polynomial model satisfying all major criteria such as train and test RMSE, adjusted $R^2$ and passing bp test. We also run anova test on top three models
+
+We then investigated the result of removing influential observations, this had some improvement on the diagnostics, and it seemed like a good compromise
+
+After looking at the diagnostics plot we come to the final conclusion that we have a good enough model for identifying the key predictors for explaining the model and predicting with reasonable accuracy.
+
+As we can see from the diagnostic statistics above, the model is useful since it has a fairly low RMSE with a very high adjusted $R^2$ and AIC is also very low. 
+
+Hence we can conclude that we have a fairly **good model**.
+
+**Final Note**: Contrary to our initial assumption, Life expectancy data analysis and designing a useful model was not straight-forward and was a challenging task. After trying several different combinations our team came up with a complex model. The combination of predictor interaction and transformation makes our model slightly complex but variable selection and their interpretation looks relevant for Life Expectancy. So we conclude that the model we have selected is good for prediction.
+
+
+# Appendix
+
+## Team members
+
+```{r, echo = FALSE}
+df = data.frame(Name = c("Boris Tsekinovsky", "Sid Rathi", "Suraj Bisht"), 
+                NetID = c("borist3", "rathi9", "surajb2"),
+                Email = c("borist3@illinois.edu", "rathi9@illinois.edu", "surajb2@illinois.edu"))
+knitr::kable(df, align = "ll", caption = "Team Members")
+```
+
+## Additional Diagnostic plots of Selected Model
+
+```{r}
+#histograms
+hist(inf_points_removed$BMI,main="Distribution of BMI",xlab = "BMI",ylab="Count", col = "blue",ylim=c(0,300))
+hist(inf_points_removed$Hepatitis_B, main="Distribution of Hepatitis B",xlab = "Hepatitis B",ylab="Count", col = "blue")
+hist(inf_points_removed$Measles,main="Distribution of Measles",xlab = "Measles",ylab="Count", col = "blue")
+hist(inf_points_removed$Polio,main="Distribution of Polio",xlab = "Polio",ylab="Count", col = "blue")
+hist(inf_points_removed$Diphtheria,main="Distribution of Diphtheria",xlab = "Diphtheria",ylab="Count", col = "blue")
+hist(inf_points_removed$Adult_Mortality,main="Distribution of Adult Mortality",xlab = "Adult Mortality",ylab="Count", col = "blue")
+hist(inf_points_removed$Alcohol,main="Distribution of Alcohol",xlab = "Alcohol",ylab="Count", col = "blue")
+hist(inf_points_removed$HIV_AIDS,main="Distribution of HIV AIDS",xlab = "HIV AIDS",ylab="Count", col = "blue")
+hist(inf_points_removed$Percentage_expenditure,main="Distribution of Percentage Expenditure",xlab = "Percentage Expenditure",ylab="Count", col = "blue")
+hist(inf_points_removed$Life_expectancy,main="Distribution of Life Expectancy",xlab = "Life Expectancy", ylab="Count", col = "blue")
+hist(inf_points_removed$Under_5_deaths,main="Distribution of Under Five Deaths ",xlab = "Under Five Deaths",ylab="Count", col = "blue",ylim=c(0,2000))
+hist(inf_points_removed$Thinness_1_to_19_yrs,main="Distribution of thinness 1-19",xlab = "Thinness 1-19",ylab="Count", col = "blue",ylim=c(0,300))
+
+```
+```
